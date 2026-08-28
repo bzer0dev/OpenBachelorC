@@ -43,6 +43,7 @@ command_lst = [
     "no_ban_card",
     "cloner_assist",
     "allow_dup_char",
+    "auto_skill",
 ]
 
 trainer_word_completer = WordCompleter(
