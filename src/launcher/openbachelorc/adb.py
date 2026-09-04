@@ -336,9 +336,12 @@ def kill_frida_server(emulator_id):
 
 
 def kill_adb_server():
-    proc = subprocess.run(
-        [
-            ADB_FILEPATH,
-            "kill-server",
-        ],
-    )
+    try:
+        proc = subprocess.run(
+            [
+                ADB_FILEPATH,
+                "kill-server",
+            ],
+        )
+    except FileNotFoundError:
+        pass  # Si ADB no está en el sistema (por ejemplo, en PC/Linux), ignoramos el error

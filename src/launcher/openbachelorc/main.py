@@ -1,5 +1,6 @@
 import sys
 import argparse
+import time
 from pathlib import Path
 import subprocess
 
@@ -61,6 +62,8 @@ def setup_config():
     parser.add_argument("--no_proxy", action="store_true")
     parser.add_argument("--dump_json", action="store_true")
     parser.add_argument("--attach_pc", action="store_true")
+    parser.add_argument("--gamescope", action="store_true")
+    parser.add_argument("--gamescope-args", default="")
     args = parser.parse_args()
 
     if args.no_proxy:
@@ -72,6 +75,9 @@ def setup_config():
 
     if args.attach_pc:
         config["attach_pc"] = True
+
+    config["gamescope"] = args.gamescope
+    config["gamescope_args"] = args.gamescope_args
 
     if config["no_proxy"] and config["enable_trainer"]:
         print("warn: trainer is disabled when no proxy is enabled")
@@ -171,6 +177,18 @@ def setup_cli(emulator_id, game):
             "clear_dumped_json", lambda: clear_dumped_json(emulator_id)
         )
 
+    if not sys.stdin.isatty():
+        # launched without an interactive terminal (e.g. from Lutris): the trainer
+        # prompt would hit EOF and exit, which would make Lutris kill the game.
+        # Keep the process alive instead.
+        print("info: no terminal — keeping the game attached (quit Lutris to stop)")
+        try:
+            while True:
+                time.sleep(3600)
+        except KeyboardInterrupt:
+            pass
+        return
+
     session = PromptSession(
         history=FileHistory("trainer.txt"), completer=trainer_word_completer
     )
@@ -202,17 +220,20 @@ def cleanup(emulator_id):
 
 
 def main():
+    emulator_id = None
+
     try:
         setup_config()
 
         if config["attach_pc"]:
             kill_adb_server()
-            emulator_id = None
 
-            subprocess.Popen(
-                f'"{Path("ak_exe_filepath.txt").read_text(encoding="utf-8")}"',
-                shell=True,
-            )
+            exe = Path("ak_exe_filepath.txt").read_text(encoding="utf-8").strip()
+            if config.get("gamescope"):
+                cmd = f"gamescope {config.get('gamescope_args', '')} -- \"{exe}\"".strip()
+            else:
+                cmd = f'"{exe}"'
+            subprocess.Popen(cmd, shell=True)
         else:
             emulator_id = get_emulator_id()
 
@@ -222,8 +243,15 @@ def main():
 
         setup_cli(emulator_id, game)
 
+    except FileNotFoundError as e:
+        print(f"error: {e}")
+        if not config.get("attach_pc", False):
+            print("hint: the emulator flow needs 'adb' in PATH (e.g. sudo apt install adb)")
+            print("hint: pass --attach_pc to launch the PC client instead")
+        sys.exit(1)
+
     finally:
-        if not config["attach_pc"]:
+        if emulator_id is not None and not config.get("attach_pc", False):
             cleanup(emulator_id)
             clear_forward_proxy(emulator_id)
 
